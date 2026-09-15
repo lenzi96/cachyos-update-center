@@ -17,7 +17,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from .. import __version__
 
-DEFAULT_GITHUB_REPO = "cachyos/cachyos-update-center"
+DEFAULT_GITHUB_REPO = "lenzi96/cachyos-update-center"
 CONFIG_FILE = Path.home() / ".config" / "cachyos-update-center" / "config.json"
 
 
