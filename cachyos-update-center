@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Standalone launcher for CachyOS Update Center
+
+INSTALL_DIR="$HOME/.local/share/cachyos-update-center"
+DEV_DIR="/run/media/julian/HDD/Linux/cachyos-update-center"
+
+if [ -n "$CACHY_UPDATE_DEV_DIR" ] && [ -d "$CACHY_UPDATE_DEV_DIR" ]; then
+    APP_DIR="$CACHY_UPDATE_DEV_DIR"
+elif [ -d "$INSTALL_DIR" ]; then
+    APP_DIR="$INSTALL_DIR"
+elif [ -d "$DEV_DIR" ]; then
+    APP_DIR="$DEV_DIR"
+elif [ -d "/usr/share/cachyos-update-center" ]; then
+    APP_DIR="/usr/share/cachyos-update-center"
+else
+    echo "Fehler: CachyOS Update Center Installation nicht gefunden." >&2
+    exit 1
+fi
+
+export PYTHONPATH="$APP_DIR:$PYTHONPATH"
+exec python3 "$APP_DIR/main.py" "$@"

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a1017"/>
+      <stop offset="50%" stop-color="#101924"/>
+      <stop offset="100%" stop-color="#070c12"/>
+    </linearGradient>
+    <linearGradient id="cachyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00FFA8"/>
+      <stop offset="50%" stop-color="#00D494"/>
+      <stop offset="100%" stop-color="#008F66"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38E1FF"/>
+      <stop offset="100%" stop-color="#0088CC"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF275"/>
+      <stop offset="100%" stop-color="#FFB300"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bgGrad)" stroke="#1e2d3d" stroke-width="6"/>
+  <rect x="36" y="36" width="440" height="440" rx="96" fill="none" stroke="url(#cachyGrad)" stroke-width="2" stroke-opacity="0.35"/>
+
+  <!-- Rotating Update Arrows Ring -->
+  <g filter="url(#glow)">
+    <!-- Top-Right Arc Arrow -->
+    <path d="M 256,92 A 164,164 0 0,1 420,256" fill="none" stroke="url(#cachyGrad)" stroke-width="28" stroke-linecap="round"/>
+    <polygon points="420,240 448,272 400,284" fill="#00FFA8"/>
+
+    <!-- Bottom-Left Arc Arrow -->
+    <path d="M 256,420 A 164,164 0 0,1 92,256" fill="none" stroke="url(#cachyGrad)" stroke-width="28" stroke-linecap="round"/>
+    <polygon points="92,272 64,240 112,228" fill="#00FFA8"/>
+  </g>
+
+  <!-- Central Speed / Mirror Server Badge -->
+  <circle cx="256" cy="256" r="92" fill="#131e2b" stroke="url(#cachyGrad)" stroke-width="8"/>
+  <circle cx="256" cy="256" r="76" fill="#0c1520"/>
+
+  <!-- Lightning Bolt (Spiegelserver Speed) -->
+  <polygon points="266,192 226,260 254,260 246,320 286,252 258,252" fill="url(#boltGrad)" filter="url(#glow)"/>
+
+  <!-- Small Connectivity / Server Signal Dots -->
+  <circle cx="256" cy="358" r="7" fill="#00FFA8"/>
+  <circle cx="282" cy="358" r="7" fill="#00D494" opacity="0.8"/>
+  <circle cx="230" cy="358" r="7" fill="#00D494" opacity="0.8"/>
+</svg>

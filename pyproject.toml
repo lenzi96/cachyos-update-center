@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cachyos-update-center"
+version = "1.0.0"
+description = "Modernes Update Center für CachyOS mit vorheriger Spiegelserver-Bewertung"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "PyQt6>=6.4.0",
+]
+
+[project.scripts]
+cachyos-update-center = "cachyos_update_center.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cachyos_update_center*"]
