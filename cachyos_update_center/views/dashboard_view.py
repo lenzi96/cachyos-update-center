@@ -101,8 +101,8 @@ class DashboardView(QWidget):
 
         self.header_card.setStyleSheet(f"""
             QFrame#headerCard {{
-                background-color: {CachyColors.BG_CARD};
-                border: 1px solid {CachyColors.BORDER_SUBTLE};
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #172635, stop:1 #0f1822);
+                border: 1px solid rgba(0, 212, 148, 0.3);
                 border-radius: 12px;
             }}
         """)
@@ -189,8 +189,8 @@ class DashboardView(QWidget):
 
         mirror_banner.setStyleSheet(f"""
             QFrame#mirrorBanner {{
-                background-color: rgba(0, 212, 148, 0.08);
-                border: 1px solid rgba(0, 212, 148, 0.3);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(0, 212, 148, 0.12), stop:1 rgba(0, 212, 148, 0.03));
+                border: 1px solid rgba(0, 212, 148, 0.35);
                 border-radius: 10px;
             }}
         """)
@@ -283,13 +283,13 @@ class DashboardView(QWidget):
 
         card.setStyleSheet(f"""
             QFrame#statCard {{
-                background-color: {CachyColors.BG_CARD};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #182434, stop:1 #131c28);
                 border: 1px solid {CachyColors.BORDER_SUBTLE};
                 border-radius: 10px;
             }}
             QFrame#statCard:hover {{
                 border-color: {CachyColors.BORDER_HOVER};
-                background-color: {CachyColors.BG_CARD_HOVER};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2c40, stop:1 #172230);
             }}
         """)
 

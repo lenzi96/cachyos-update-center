@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -21,10 +21,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
+from .core.github_updater import GitHubUpdateCheckerWorker, GitHubUpdateInfo
 from .core.mirror_rater import MirrorRater
 from .core.news_checker import NewsChecker
 from .core.online_issue_checker import OnlineIssueChecker
 from .core.package_checker import PackageChecker, PackageUpdate
+from .dialogs.github_update_dialog import GitHubUpdateDialog
 from .styles import CACHY_STYLESHEET, CachyColors
 from .views.dashboard_view import DashboardView
 from .views.execution_view import ExecutionView
@@ -77,22 +80,42 @@ class PackageCheckWorker(QThread):
         self.news_loaded.emit(news)
 
 
-
 class MainWindow(QMainWindow):
     """Primary application window for CachyOS Update Center."""
+
+    TAB_TITLES = {
+        0: ("⚡ System-Übersicht", "Systemzustand, anstehende Updates und Schnellstart mit automatischer Spiegel-Bewertung"),
+        1: ("📦 Paket-Verwaltung", "Detaillierte Paketliste mit automatischer Ausschlussfunktion problematischer Versionen"),
+        2: ("🌐 Spiegelserver-Bewertung", "Live-Latenzmessung und pacman.d Ranglisten-Generierung für CachyOS & Arch"),
+        3: ("▶ Aktualisierungs-Pipeline", "4-Phasen-Ausführung mit BTRFS-Snapshot, Spiegelservern & Live-Terminal"),
+        4: ("🧹 Systempflege & Snapshots", "BTRFS Snapshots, Pacman-Cache bereinigen, verwaiste Pakete & Pacnew-Dateien"),
+        5: ("⚙️ Einstellungen", "Konfiguration der Spiegelserver-Bewertung, Schutzfilter und GitHub-Updater"),
+    }
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CachyOS Update Center")
-        self.resize(1060, 700)
-        self.setMinimumSize(920, 580)
+        self.resize(1120, 720)
+        self.setMinimumSize(960, 600)
+
+        # Window Icon
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "app_icon_64.png")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "app_icon.svg")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.packages: List[PackageUpdate] = []
         self.check_worker: Optional[PackageCheckWorker] = None
+        self.bg_github_worker: Optional[GitHubUpdateCheckerWorker] = None
+        self.github_update_info: Optional[GitHubUpdateInfo] = None
 
         self.init_ui()
         self.apply_styles()
         self.start_initial_check()
+
+        # Start silent GitHub update check in background
+        QTimer.singleShot(1500, self.start_background_app_update_check)
 
     def init_ui(self):
         central_widget = QWidget()
@@ -107,15 +130,15 @@ class MainWindow(QMainWindow):
         # ----------------------------------------------------------------------
         sidebar = QFrame()
         sidebar.setObjectName("navSidebar")
-        sidebar.setFixedWidth(230)
+        sidebar.setFixedWidth(240)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(14, 20, 14, 16)
-        sidebar_layout.setSpacing(8)
+        sidebar_layout.setContentsMargins(14, 18, 14, 16)
+        sidebar_layout.setSpacing(6)
 
         # App Brand Header
         brand_frame = QFrame()
         brand_layout = QHBoxLayout(brand_frame)
-        brand_layout.setContentsMargins(4, 0, 4, 16)
+        brand_layout.setContentsMargins(4, 0, 4, 14)
         brand_layout.setSpacing(12)
 
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "app_icon_64.png")
@@ -124,24 +147,45 @@ class MainWindow(QMainWindow):
 
         logo_lbl = QLabel()
         if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path).scaled(42, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            pixmap = QPixmap(icon_path).scaled(38, 38, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             logo_lbl.setPixmap(pixmap)
         else:
             logo_lbl.setText("⚡")
-            logo_lbl.setStyleSheet("font-size: 28px;")
+            logo_lbl.setStyleSheet("font-size: 26px;")
+        logo_lbl.setStyleSheet(f"""
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(0, 212, 148, 0.2), stop:1 rgba(0, 171, 119, 0.08));
+            border: 1px solid rgba(0, 212, 148, 0.35);
+            border-radius: 10px;
+            padding: 3px;
+        """)
 
         brand_text = QVBoxLayout()
-        brand_text.setSpacing(1)
+        brand_text.setSpacing(2)
         title_lbl = QLabel("CachyOS")
-        title_lbl.setStyleSheet(f"font-weight: 800; font-size: 16px; color: {CachyColors.ACCENT_EMERALD_LIGHT};")
-        sub_title = QLabel("Update Center")
-        sub_title.setStyleSheet(f"font-size: 12px; color: {CachyColors.TEXT_SECONDARY}; font-weight: 600;")
+        title_lbl.setStyleSheet(f"font-weight: 800; font-size: 16px; color: {CachyColors.TEXT_PRIMARY}; letter-spacing: 0.3px;")
+        sub_title = QLabel(f"UPDATE CENTER v{__version__}")
+        sub_title.setStyleSheet(f"""
+            font-size: 9px;
+            color: {CachyColors.ACCENT_EMERALD_LIGHT};
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            background: rgba(0, 212, 148, 0.12);
+            border: 1px solid rgba(0, 212, 148, 0.25);
+            border-radius: 4px;
+            padding: 1px 5px;
+        """)
         brand_text.addWidget(title_lbl)
         brand_text.addWidget(sub_title)
 
         brand_layout.addWidget(logo_lbl)
         brand_layout.addLayout(brand_text, 1)
         sidebar_layout.addWidget(brand_frame)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.HLine)
+        div.setStyleSheet(f"background-color: {CachyColors.BORDER_SUBTLE}; max-height: 1px; margin: 4px 0px 8px 0px; border: none;")
+        sidebar_layout.addWidget(div)
 
         # Navigation Buttons
         self.nav_buttons = []
@@ -161,33 +205,96 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        # System Info Pill at bottom of sidebar
-        sys_pill = QFrame()
-        sys_pill.setStyleSheet(f"""
-            background-color: {CachyColors.BG_CARD};
-            border: 1px solid {CachyColors.BORDER_SUBTLE};
-            border-radius: 8px;
-            padding: 8px;
+        # Sidebar Footer Card (GitHub Updater & System Info)
+        footer_card = QFrame()
+        footer_card.setObjectName("footerCard")
+        footer_card.setStyleSheet(f"""
+            QFrame#footerCard {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #162232, stop:1 #0d141e);
+                border: 1px solid {CachyColors.BORDER_SUBTLE};
+                border-radius: 10px;
+            }}
         """)
-        sp_layout = QVBoxLayout(sys_pill)
-        sp_layout.setContentsMargins(6, 6, 6, 6)
-        sp_layout.setSpacing(2)
+        footer_layout = QVBoxLayout(footer_card)
+        footer_layout.setContentsMargins(12, 10, 12, 10)
+        footer_layout.setSpacing(4)
+
+        lbl_app_status = QLabel(f"● Update Center v{__version__}")
+        lbl_app_status.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {CachyColors.ACCENT_EMERALD};")
 
         k_ver = PackageChecker.get_running_kernel()
-        sp_k = QLabel(f"🐧 {k_ver.split('-')[0]}")
-        sp_k.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {CachyColors.TEXT_PRIMARY};")
-        sp_desc = QLabel("CachyOS x86-64-v3/v4")
-        sp_desc.setStyleSheet(f"font-size: 10px; color: {CachyColors.ACCENT_EMERALD};")
+        lbl_kernel_info = QLabel(f"🐧 {k_ver.split('-')[0]}  │  x86-64-v3/v4")
+        lbl_kernel_info.setStyleSheet(f"font-size: 10px; color: {CachyColors.TEXT_MUTED};")
 
-        sp_layout.addWidget(sp_k)
-        sp_layout.addWidget(sp_desc)
-        sidebar_layout.addWidget(sys_pill)
+        self.btn_sidebar_app_update = QPushButton("Auf App-Updates prüfen...")
+        self.btn_sidebar_app_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_sidebar_app_update.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 0.05);
+                color: {CachyColors.TEXT_PRIMARY};
+                font-size: 11px;
+                font-weight: 600;
+                border: 1px solid {CachyColors.BORDER_SUBTLE};
+                border-radius: 6px;
+                padding: 6px 8px;
+                margin-top: 4px;
+            }}
+            QPushButton:hover {{
+                background: rgba(0, 212, 148, 0.15);
+                color: {CachyColors.ACCENT_EMERALD_LIGHT};
+                border-color: {CachyColors.ACCENT_EMERALD};
+            }}
+        """)
+        self.btn_sidebar_app_update.clicked.connect(self.show_app_update_dialog)
+
+        footer_layout.addWidget(lbl_app_status)
+        footer_layout.addWidget(lbl_kernel_info)
+        footer_layout.addWidget(self.btn_sidebar_app_update)
+        sidebar_layout.addWidget(footer_card)
 
         root_layout.addWidget(sidebar)
 
         # ----------------------------------------------------------------------
-        # Main Content Stack
+        # Right Main Column (Top Header Bar + Content Stack)
         # ----------------------------------------------------------------------
+        right_column = QWidget()
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        # Top Header Bar
+        self.top_header_bar = QFrame()
+        self.top_header_bar.setObjectName("topHeaderBar")
+        self.top_header_bar.setFixedHeight(54)
+        top_layout = QHBoxLayout(self.top_header_bar)
+        top_layout.setContentsMargins(22, 8, 22, 8)
+        top_layout.setSpacing(14)
+
+        header_title_box = QVBoxLayout()
+        header_title_box.setSpacing(1)
+        self.lbl_view_title = QLabel("⚡ System-Übersicht")
+        self.lbl_view_title.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {CachyColors.TEXT_PRIMARY};")
+        self.lbl_view_subtitle = QLabel("Systemzustand, anstehende Updates und Schnellstart mit vorheriger Spiegel-Bewertung")
+        self.lbl_view_subtitle.setStyleSheet(f"font-size: 11px; color: {CachyColors.TEXT_MUTED};")
+        header_title_box.addWidget(self.lbl_view_title)
+        header_title_box.addWidget(self.lbl_view_subtitle)
+        top_layout.addLayout(header_title_box, 1)
+
+        # Right Action Buttons in Top Bar
+        self.btn_top_app_update = QPushButton(f"🔄 App-Update (v{__version__})")
+        self.btn_top_app_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_top_app_update.clicked.connect(self.show_app_update_dialog)
+        top_layout.addWidget(self.btn_top_app_update)
+
+        self.btn_top_refresh = QPushButton("  Aktualisieren")
+        self.btn_top_refresh.setIcon(QIcon.fromTheme("view-refresh"))
+        self.btn_top_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_top_refresh.clicked.connect(self.start_initial_check)
+        top_layout.addWidget(self.btn_top_refresh)
+
+        right_layout.addWidget(self.top_header_bar)
+
+        # Main Content Stack
         self.stack = QStackedWidget()
 
         # 0: Dashboard
@@ -219,9 +326,11 @@ class MainWindow(QMainWindow):
 
         # 5: Settings
         self.view_settings = SettingsView()
+        self.view_settings.request_open_updater.connect(self.show_app_update_dialog)
         self.stack.addWidget(self.view_settings)
 
-        root_layout.addWidget(self.stack, 1)
+        right_layout.addWidget(self.stack, 1)
+        root_layout.addWidget(right_column, 1)
 
         # Set initial active tab
         self.switch_tab(0)
@@ -240,6 +349,10 @@ class MainWindow(QMainWindow):
             btn.setProperty("active", "true" if i == index else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+
+        title, subtitle = self.TAB_TITLES.get(index, ("CachyOS Update Center", ""))
+        self.lbl_view_title.setText(title)
+        self.lbl_view_subtitle.setText(subtitle)
 
     def apply_styles(self):
         self.setStyleSheet(CACHY_STYLESHEET)
@@ -306,4 +419,40 @@ class MainWindow(QMainWindow):
             selected_packages=selected_packages,
             auto_exclude_issues=auto_exclude,
         )
+
+    def start_background_app_update_check(self):
+        """Silently queries GitHub releases in the background without popups."""
+        self.bg_github_worker = GitHubUpdateCheckerWorker(parent=self)
+        self.bg_github_worker.finished.connect(self._on_bg_app_update_finished)
+        self.bg_github_worker.start()
+
+    def _on_bg_app_update_finished(self, info: GitHubUpdateInfo):
+        """Called when GitHub update check completes; alerts user if new release is found."""
+        self.github_update_info = info
+        if info.has_update:
+            badge_text = f"● Update verfügbar! (v{info.remote_version})"
+            tip = (
+                f"Eine neuere Version von CachyOS Update Center ist verfügbar!\n"
+                f"• Installiert: v{info.installed_version}\n"
+                f"• Auf GitHub: v{info.remote_version}\n"
+                f"Klicken, um Changelog einzusehen und direkt zu aktualisieren."
+            )
+
+            self.btn_sidebar_app_update.setText(badge_text)
+            self.btn_sidebar_app_update.setProperty("class", "btn-update-pending")
+            self.btn_sidebar_app_update.setToolTip(tip)
+            self.btn_sidebar_app_update.style().unpolish(self.btn_sidebar_app_update)
+            self.btn_sidebar_app_update.style().polish(self.btn_sidebar_app_update)
+
+            self.btn_top_app_update.setText(badge_text)
+            self.btn_top_app_update.setProperty("class", "btn-update-pending")
+            self.btn_top_app_update.setToolTip(tip)
+            self.btn_top_app_update.style().unpolish(self.btn_top_app_update)
+            self.btn_top_app_update.style().polish(self.btn_top_app_update)
+
+    def show_app_update_dialog(self):
+        """Displays modal GitHub update dialog."""
+        dlg = GitHubUpdateDialog(self)
+        dlg.exec()
+
 

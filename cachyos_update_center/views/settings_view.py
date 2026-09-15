@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .. import __version__
+from ..core.github_updater import get_github_repo
 from ..styles import CachyColors
 
 
@@ -26,6 +28,7 @@ class SettingsView(QWidget):
     """Configuration management view."""
 
     settings_changed = pyqtSignal(dict)
+    request_open_updater = pyqtSignal()
     CONFIG_FILE = Path.home() / ".config" / "cachyos-update-center" / "config.json"
 
     DEFAULT_CONFIG = {
@@ -64,7 +67,7 @@ class SettingsView(QWidget):
         # ----------------------------------------------------------------------
         # Group 1: Spiegelserver-Bewertung (Priority Feature)
         # ----------------------------------------------------------------------
-        group_mirrors = self._create_group("🌐 Spiegelserver & Geschwindigkeits-Optimierung")
+        group_mirrors = self._create_group("🌐 Spiegelserver && Geschwindigkeits-Optimierung")
 
         self.chk_rate_always = QCheckBox("Spiegelserver immer vor jeder Aktualisierung bewerten (Empfohlen)")
         self.chk_rate_always.setChecked(self.config.get("rate_mirrors_always", True))
@@ -116,7 +119,7 @@ class SettingsView(QWidget):
         # ----------------------------------------------------------------------
         # Group 2: Paketquellen & Snapshot-Sicherheit
         # ----------------------------------------------------------------------
-        group_sources = self._create_group("📦 Paketquellen & Systemsicherheit")
+        group_sources = self._create_group("📦 Paketquellen && Systemsicherheit")
 
         self.chk_include_aur = QCheckBox("AUR-Pakete (Arch User Repository via yay) einbeziehen")
         self.chk_include_aur.setChecked(self.config.get("include_aur", True))
@@ -126,7 +129,7 @@ class SettingsView(QWidget):
         self.chk_create_snapshot.setChecked(self.config.get("create_snapshot", True))
         group_sources.layout().addWidget(self.chk_create_snapshot)
 
-        self.chk_auto_exclude = QCheckBox("Vor Update online auf Probleme prüfen & automatisch ausschließen (Empfohlen)")
+        self.chk_auto_exclude = QCheckBox("Vor Update online auf Probleme prüfen && automatisch ausschließen (Empfohlen)")
         self.chk_auto_exclude.setChecked(self.config.get("auto_exclude_issues", True))
         self.chk_auto_exclude.setStyleSheet(f"font-weight: 700; color: {CachyColors.ACCENT_EMERALD_LIGHT};")
         group_sources.layout().addWidget(self.chk_auto_exclude)
@@ -145,7 +148,7 @@ class SettingsView(QWidget):
         # ----------------------------------------------------------------------
         # Group 3: Nachbereitung & Systemgesundheit
         # ----------------------------------------------------------------------
-        group_post = self._create_group("🧹 Nachbereitung & Systempflege")
+        group_post = self._create_group("🧹 Nachbereitung && Systempflege")
 
         self.chk_clean_cache = QCheckBox("Paket-Cache nach erfolgreicher Aktualisierung aufräumen (paccache)")
         self.chk_clean_cache.setChecked(self.config.get("clean_cache_after", True))
@@ -156,6 +159,33 @@ class SettingsView(QWidget):
         group_post.layout().addWidget(self.chk_notify_reboot)
 
         layout.addWidget(group_post)
+
+        # ----------------------------------------------------------------------
+        # Group 4: Anwendungs-Aktualisierung (GitHub)
+        # ----------------------------------------------------------------------
+        group_app = self._create_group("🔄 Anwendungs-Aktualisierung (GitHub)")
+
+        app_info_row = QHBoxLayout()
+        lbl_app_ver = QLabel(f"Installierte Version: v{__version__}  │  Repository: {get_github_repo()}")
+        lbl_app_ver.setStyleSheet(f"font-size: 12px; color: {CachyColors.TEXT_SECONDARY};")
+        app_info_row.addWidget(lbl_app_ver)
+        app_info_row.addStretch()
+
+        self.btn_check_github = QPushButton("  🚀 GitHub Update Center öffnen")
+        self.btn_check_github.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_check_github.clicked.connect(self.request_open_updater.emit)
+        app_info_row.addWidget(self.btn_check_github)
+        group_app.layout().addLayout(app_info_row)
+
+        lbl_app_desc = QLabel(
+            "Prüft direkt auf GitHub Releases oder Git-Commits, zeigt Release-Notes & Changelogs an "
+            "und aktualisiert das CachyOS Update Center mit einem Klick."
+        )
+        lbl_app_desc.setStyleSheet(f"font-size: 11px; color: {CachyColors.TEXT_MUTED};")
+        lbl_app_desc.setWordWrap(True)
+        group_app.layout().addWidget(lbl_app_desc)
+
+        layout.addWidget(group_app)
 
         # ----------------------------------------------------------------------
         # Save Button Bar

@@ -46,14 +46,15 @@ QMainWindow, QDialog {{
 
 /* Scrollbars */
 QScrollBar:vertical {{
-    background: {CachyColors.BG_DARK};
-    width: 8px;
+    background: {CachyColors.BG_DARKEST};
+    width: 7px;
     margin: 0px;
+    border-radius: 3px;
 }}
 QScrollBar::handle:vertical {{
     background: {CachyColors.BORDER_SUBTLE};
-    min-height: 24px;
-    border-radius: 4px;
+    min-height: 28px;
+    border-radius: 3px;
 }}
 QScrollBar::handle:vertical:hover {{
     background: {CachyColors.ACCENT_EMERALD};
@@ -66,14 +67,15 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
 }}
 
 QScrollBar:horizontal {{
-    background: {CachyColors.BG_DARK};
-    height: 8px;
+    background: {CachyColors.BG_DARKEST};
+    height: 7px;
     margin: 0px;
+    border-radius: 3px;
 }}
 QScrollBar::handle:horizontal {{
     background: {CachyColors.BORDER_SUBTLE};
-    min-width: 24px;
-    border-radius: 4px;
+    min-width: 28px;
+    border-radius: 3px;
 }}
 QScrollBar::handle:horizontal:hover {{
     background: {CachyColors.ACCENT_EMERALD};
@@ -82,14 +84,21 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0px;
 }}
 
-/* Cards & Containers */
-QFrame.cachy-card {{
+/* Top Header Bar */
+QFrame#topHeaderBar {{
+    background-color: {CachyColors.BG_DARKEST};
+    border-bottom: 1px solid {CachyColors.BORDER_SUBTLE};
+}}
+
+/* Cards & Panels */
+QFrame.cachy-card, QFrame#statCard, QFrame#headerCard {{
     background-color: {CachyColors.BG_CARD};
     border: 1px solid {CachyColors.BORDER_SUBTLE};
     border-radius: 10px;
 }}
-QFrame.cachy-card:hover {{
+QFrame.cachy-card:hover, QFrame#statCard:hover {{
     border-color: {CachyColors.BORDER_HOVER};
+    background-color: {CachyColors.BG_CARD_HOVER};
 }}
 
 QFrame.cachy-panel {{
@@ -108,21 +117,26 @@ QPushButton.nav-btn {{
     background-color: transparent;
     color: {CachyColors.TEXT_SECONDARY};
     text-align: left;
-    padding: 10px 16px;
-    border: none;
+    padding: 10px 14px;
+    border: 1px solid transparent;
     border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
 }}
 QPushButton.nav-btn:hover {{
-    background-color: {CachyColors.BG_PANEL};
+    background-color: rgba(255, 255, 255, 0.05);
     color: {CachyColors.TEXT_PRIMARY};
+    border-color: rgba(255, 255, 255, 0.08);
 }}
 QPushButton.nav-btn[active="true"] {{
-    background-color: {CachyColors.BG_CARD};
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(0, 212, 148, 0.18), stop:1 rgba(0, 212, 148, 0.04));
     color: {CachyColors.ACCENT_EMERALD_LIGHT};
     font-weight: 600;
     border-left: 3px solid {CachyColors.ACCENT_EMERALD};
+    border-top: 1px solid rgba(0, 212, 148, 0.2);
+    border-right: 1px solid rgba(0, 212, 148, 0.1);
+    border-bottom: 1px solid rgba(0, 212, 148, 0.2);
+    border-radius: 8px;
 }}
 
 /* Buttons */
@@ -130,8 +144,8 @@ QPushButton {{
     background-color: {CachyColors.BG_CARD};
     color: {CachyColors.TEXT_PRIMARY};
     border: 1px solid {CachyColors.BORDER_SUBTLE};
-    border-radius: 6px;
-    padding: 8px 16px;
+    border-radius: 7px;
+    padding: 8px 14px;
     font-size: 13px;
     font-weight: 500;
 }}
@@ -150,23 +164,24 @@ QPushButton:disabled {{
 
 /* Primary Accent Button */
 QPushButton.btn-primary {{
-    background-color: {CachyColors.ACCENT_EMERALD};
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {CachyColors.ACCENT_EMERALD}, stop:1 #00ab77);
     color: #03140e;
     border: 1px solid {CachyColors.ACCENT_EMERALD_LIGHT};
     font-weight: 700;
     border-radius: 7px;
-    padding: 10px 20px;
+    padding: 9px 18px;
 }}
 QPushButton.btn-primary:hover {{
-    background-color: {CachyColors.ACCENT_EMERALD_LIGHT};
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {CachyColors.ACCENT_EMERALD_LIGHT}, stop:1 {CachyColors.ACCENT_EMERALD});
     color: #020d09;
+    border-color: #ffffff;
 }}
 QPushButton.btn-primary:pressed {{
     background-color: {CachyColors.ACCENT_EMERALD_DARK};
     color: #ffffff;
 }}
 QPushButton.btn-primary:disabled {{
-    background-color: #17362a;
+    background: #17362a;
     color: #4a7565;
     border-color: #1b4334;
 }}
@@ -181,6 +196,20 @@ QPushButton.btn-danger {{
 QPushButton.btn-danger:hover {{
     background-color: {CachyColors.ACCENT_RED};
     color: #ffffff;
+}}
+
+/* Update Available Button Highlight */
+QPushButton.btn-update-pending {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ea580c, stop:1 #c2410c);
+    color: #ffffff;
+    font-weight: 700;
+    border: 1px solid #f97316;
+    border-radius: 7px;
+    padding: 8px 14px;
+}}
+QPushButton.btn-update-pending:hover {{
+    background: #ea580c;
+    border-color: #fdba74;
 }}
 
 /* Inputs & Search */
@@ -229,7 +258,6 @@ QCheckBox::indicator:hover {{
 QCheckBox::indicator:checked {{
     background-color: {CachyColors.ACCENT_EMERALD};
     border-color: {CachyColors.ACCENT_EMERALD_LIGHT};
-    image: url(/usr/share/icons/breeze-dark/actions/16/dialog-ok.svg);
 }}
 
 /* Tables */

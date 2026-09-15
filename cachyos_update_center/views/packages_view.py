@@ -131,6 +131,7 @@ class PackagesView(QWidget):
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
 
         layout.addWidget(self.table, 1)
+        self.table.itemChanged.connect(self._on_item_changed)
 
         # ----------------------------------------------------------------------
         # Bottom Summary & Action Bar
@@ -170,6 +171,7 @@ class PackagesView(QWidget):
         search_text = self.search_input.text().lower()
         filter_idx = self.combo_filter.currentIndex()
 
+        self.table.blockSignals(True)
         self.table.setRowCount(0)
         selected_count = 0
         visible_count = 0
@@ -206,6 +208,7 @@ class PackagesView(QWidget):
             chk_item = QTableWidgetItem()
             chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             chk_item.setCheckState(Qt.CheckState.Checked if pkg.is_selected else Qt.CheckState.Unchecked)
+            chk_item.setData(Qt.ItemDataRole.UserRole, pkg.name)
             self.table.setItem(row, 0, chk_item)
             if pkg.is_selected:
                 selected_count += 1
@@ -248,16 +251,18 @@ class PackagesView(QWidget):
                 desc_item.setForeground(Qt.GlobalColor.yellow)
             self.table.setItem(row, 6, desc_item)
 
-
-        self.table.itemChanged.connect(self._on_item_changed)
+        self.table.blockSignals(False)
         self.summary_lbl.setText(f"{selected_count} von {len(self.packages)} Paketen ausgewählt")
         self.btn_install_selected.setEnabled(selected_count > 0)
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if item.column() == 0:
-            row = item.row()
-            if row < len(self.packages):
-                self.packages[row].is_selected = (item.checkState() == Qt.CheckState.Checked)
+            pkg_name = item.data(Qt.ItemDataRole.UserRole)
+            if pkg_name:
+                for p in self.packages:
+                    if p.name == pkg_name:
+                        p.is_selected = (item.checkState() == Qt.CheckState.Checked)
+                        break
 
             selected_count = sum(1 for p in self.packages if p.is_selected)
             self.summary_lbl.setText(f"{selected_count} von {len(self.packages)} Paketen ausgewählt")
