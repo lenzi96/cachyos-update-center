@@ -24,6 +24,7 @@ echo "→ Kopiere Anwendungsdateien nach $SHARE_DIR..."
 rm -rf "$SHARE_DIR/cachyos_update_center"
 cp -r "$DIR/cachyos_update_center" "$SHARE_DIR/"
 cp "$DIR/main.py" "$SHARE_DIR/"
+[ -f "$DIR/CHANGELOG.md" ] && cp "$DIR/CHANGELOG.md" "$SHARE_DIR/"
 echo "[✓] Anwendungsdateien installiert"
 
 # 2. Standalone-Launcher nach ~/.local/bin/cachyos-update-center installieren

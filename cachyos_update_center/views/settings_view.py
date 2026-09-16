@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import (
 )
 
 from .. import __version__
-from ..core.github_updater import get_github_repo
 from ..styles import CachyColors
+from ..updater import get_github_repo
 
 
 class SettingsView(QWidget):

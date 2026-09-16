@@ -22,13 +22,12 @@ from PyQt6.QtWidgets import (
 )
 
 from . import __version__
-from .core.github_updater import GitHubUpdateCheckerWorker, GitHubUpdateInfo
 from .core.mirror_rater import MirrorRater
 from .core.news_checker import NewsChecker
 from .core.online_issue_checker import OnlineIssueChecker
 from .core.package_checker import PackageChecker, PackageUpdate
-from .dialogs.github_update_dialog import GitHubUpdateDialog
 from .styles import CACHY_STYLESHEET, CachyColors
+from .updater import UpdateCheckerWorker, UpdateDialog, UpdateInfo
 from .views.dashboard_view import DashboardView
 from .views.execution_view import ExecutionView
 from .views.maintenance_view import MaintenanceView
@@ -107,8 +106,8 @@ class MainWindow(QMainWindow):
 
         self.packages: List[PackageUpdate] = []
         self.check_worker: Optional[PackageCheckWorker] = None
-        self.bg_github_worker: Optional[GitHubUpdateCheckerWorker] = None
-        self.github_update_info: Optional[GitHubUpdateInfo] = None
+        self.bg_github_worker: Optional[UpdateCheckerWorker] = None
+        self.github_update_info: Optional[UpdateInfo] = None
 
         self.init_ui()
         self.apply_styles()
@@ -422,19 +421,19 @@ class MainWindow(QMainWindow):
 
     def start_background_app_update_check(self):
         """Silently queries GitHub releases in the background without popups."""
-        self.bg_github_worker = GitHubUpdateCheckerWorker(parent=self)
+        self.bg_github_worker = UpdateCheckerWorker(parent=self)
         self.bg_github_worker.finished.connect(self._on_bg_app_update_finished)
         self.bg_github_worker.start()
 
-    def _on_bg_app_update_finished(self, info: GitHubUpdateInfo):
-        """Called when GitHub update check completes; alerts user if new release is found."""
+    def _on_bg_app_update_finished(self, info: UpdateInfo):
+        """Called when multi-component/GitHub update check completes; alerts user if new release is found."""
         self.github_update_info = info
-        if info.has_update:
-            badge_text = f"● Update verfügbar! (v{info.remote_version})"
+        if info.gui_has_update:
+            badge_text = f"● Update verfügbar! (v{info.gui_remote})"
             tip = (
                 f"Eine neuere Version von CachyOS Update Center ist verfügbar!\n"
-                f"• Installiert: v{info.installed_version}\n"
-                f"• Auf GitHub: v{info.remote_version}\n"
+                f"• Installiert: v{info.gui_local}\n"
+                f"• Auf GitHub: v{info.gui_remote}\n"
                 f"Klicken, um Changelog einzusehen und direkt zu aktualisieren."
             )
 
@@ -451,8 +450,8 @@ class MainWindow(QMainWindow):
             self.btn_top_app_update.style().polish(self.btn_top_app_update)
 
     def show_app_update_dialog(self):
-        """Displays modal GitHub update dialog."""
-        dlg = GitHubUpdateDialog(self)
+        """Displays modal UpdateDialog matching Cachy Security Suite design."""
+        dlg = UpdateDialog(self)
         dlg.exec()
 
 
