@@ -36,11 +36,24 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+# Ensure parent directory is in sys.path for direct script execution
+_pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _pkg_root not in sys.path:
+    sys.path.insert(0, _pkg_root)
+
 import cachyos_update_center
-from .styles import CachyColors
-from .core.mirror_rater import MirrorRater
-from .core.package_checker import PackageChecker
-from .core.snapper_helper import SnapperHelper
+
+try:
+    from .styles import CachyColors
+    from .core.mirror_rater import MirrorRater
+    from .core.package_checker import PackageChecker
+    from .core.snapper_helper import SnapperHelper
+except (ImportError, ValueError):
+    from cachyos_update_center.styles import CachyColors
+    from cachyos_update_center.core.mirror_rater import MirrorRater
+    from cachyos_update_center.core.package_checker import PackageChecker
+    from cachyos_update_center.core.snapper_helper import SnapperHelper
+
 
 
 @dataclass
@@ -258,6 +271,8 @@ class UpdateCheckerWorker(QThread):
                                     info.github_tarball_url = asset.get("browser_download_url", "")
                                     info.github_asset_api_url = asset.get("url", "")
                                     break
+                            if not info.github_tarball_url:
+                                info.github_tarball_url = gh_data.get("tarball_url", "") or f"https://github.com/{gh_repo}/archive/refs/tags/v{tag}.tar.gz"
             except urllib.error.HTTPError as err:
                 if err.code in (401, 403, 404):
                     info.github_auth_error = True
@@ -1251,19 +1266,33 @@ def download_and_install_release(version: str = "", asset_url: str = "", tarball
     unpack_dir = os.path.join(tmp_dir, "unpacked")
 
     try:
-        download_url = asset_url if (token and asset_url) else tarball_url
-        if not download_url:
-            download_url = f"https://github.com/{repo}/releases/download/v{version}/cachyos-update-center-v{version}.tar.gz"
+        tag_name = version if version.startswith("v") else f"v{version}"
+        clean_version = version.lstrip("v")
 
-        print("[1/4] Lade Release-Paket herunter...")
+        # Select proper download URL
+        download_url = ""
+        if token and asset_url and asset_url.strip():
+            download_url = asset_url.strip()
+        elif tarball_url and tarball_url.strip():
+            download_url = tarball_url.strip()
+        else:
+            if token:
+                download_url = f"https://api.github.com/repos/{repo}/tarball/{tag_name}"
+            else:
+                download_url = f"https://github.com/{repo}/archive/refs/tags/{tag_name}.tar.gz"
+
+        is_release_asset = ("/releases/assets/" in download_url)
+        accept_header = "application/octet-stream" if is_release_asset else "application/vnd.github+json"
+
+        print(f"[1/4] Lade Release-Paket herunter ({download_url})...")
         curl_bin = shutil.which("curl")
         download_ok = False
 
         if curl_bin:
             curl_cmd = [curl_bin, "-sSL", "-f"]
-            if token:
+            if token and "api.github.com" in download_url:
                 curl_cmd.extend(["-H", f"Authorization: Bearer {token}"])
-            curl_cmd.extend(["-H", "Accept: application/octet-stream", download_url, "-o", tar_path])
+            curl_cmd.extend(["-H", f"Accept: {accept_header}", download_url, "-o", tar_path])
             res = subprocess.run(curl_cmd, check=False)
             if res.returncode == 0 and os.path.exists(tar_path) and os.path.getsize(tar_path) > 1000:
                 download_ok = True
@@ -1277,10 +1306,9 @@ def download_and_install_release(version: str = "", asset_url: str = "", tarball
                     return new_req
 
             opener = urllib.request.build_opener(NoAuthRedirect)
-            headers = {"User-Agent": "CachyOS-Update-Center"}
+            headers = {"User-Agent": "CachyOS-Update-Center", "Accept": accept_header}
             if token and "api.github.com" in download_url:
                 headers["Authorization"] = f"Bearer {token}"
-                headers["Accept"] = "application/octet-stream"
             req = urllib.request.Request(download_url, headers=headers)
             try:
                 with opener.open(req, timeout=30) as resp, open(tar_path, "wb") as out_f:
@@ -1291,19 +1319,29 @@ def download_and_install_release(version: str = "", asset_url: str = "", tarball
                 print(f"[Hinweis] urllib Download: {e}")
 
         if not download_ok:
-            print("[FEHLER] Herunterladen des Release-Archivs fehlgeschlagen.")
-            return 1
+            # Fallback to shallow git clone of release tag
+            print("[Hinweis] Direktdownload nicht möglich, verwende git clone Fallback...")
+            clone_dir = os.path.join(tmp_dir, "clone")
+            clone_repo = f"https://{token}@github.com/{repo}.git" if token else f"https://github.com/{repo}.git"
+            res_clone = subprocess.run(["git", "clone", "--depth", "1", "--branch", tag_name, clone_repo, clone_dir], check=False)
+            if res_clone.returncode == 0 and os.path.isdir(clone_dir):
+                unpack_dir = clone_dir
+                download_ok = True
+            else:
+                print("[FEHLER] Herunterladen des Release-Archivs fehlgeschlagen.")
+                return 1
 
-        size_mb = os.path.getsize(tar_path) / (1024 * 1024)
-        print(f"✓ Download erfolgreich ({size_mb:.2f} MB)")
+        if os.path.exists(tar_path) and os.path.getsize(tar_path) > 1000:
+            size_mb = os.path.getsize(tar_path) / (1024 * 1024)
+            print(f"✓ Download erfolgreich ({size_mb:.2f} MB)")
 
-        print("[2/4] Entpacke Archiv...")
-        os.makedirs(unpack_dir, exist_ok=True)
-        res_tar = subprocess.run(["tar", "-xzf", tar_path, "-C", unpack_dir], check=False)
-        if res_tar.returncode != 0:
-            print("[FEHLER] Archiv konnte nicht entpackt werden.")
-            return 1
-        print("✓ Entpacken abgeschlossen.")
+            print("[2/4] Entpacke Archiv...")
+            os.makedirs(unpack_dir, exist_ok=True)
+            res_tar = subprocess.run(["tar", "-xzf", tar_path, "-C", unpack_dir], check=False)
+            if res_tar.returncode != 0:
+                print("[FEHLER] Archiv konnte nicht entpackt werden.")
+                return 1
+            print("✓ Entpacken abgeschlossen.")
 
         installer_path = None
         for root, dirs, files in os.walk(unpack_dir):
