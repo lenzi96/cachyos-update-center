@@ -5,15 +5,16 @@ Provides a secure, native CachyOS-styled password prompt for sudo / yay.
 Caches authentication in RAM tmpfs during the active update session so the user is only prompted ONCE.
 Outputs the password to stdout (required by SUDO_ASKPASS).
 """
+import datetime
 import os
 import shutil
 import subprocess
 import sys
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 try:
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtGui import QFont, QKeySequence, QShortcut
     from PyQt6.QtWidgets import (
         QApplication,
@@ -91,21 +92,96 @@ def save_cached_password(pwd: str):
         pass
 
 
-def verify_sudo_password(pwd: str) -> bool:
-    """Directly verifies password via sudo -S -k -v. Returns True if valid."""
+class AuthResult(tuple):
+    """Encapsulates authentication outcome with boolean evaluation and informative message."""
+    def __new__(cls, success: bool, message: str = ""):
+        return super().__new__(cls, (success, message))
+
+    @property
+    def success(self) -> bool:
+        return bool(self[0])
+
+    @property
+    def message(self) -> str:
+        return str(self[1])
+
+    def __bool__(self) -> bool:
+        return bool(self[0])
+
+
+def get_faillock_remaining(user: Optional[str] = None, unlock_time: int = 600, deny: int = 3) -> int:
+    """Returns seconds remaining if account is locked by pam_faillock, or 0 if not locked."""
+    if not user:
+        user = os.environ.get("USER", "")
+        if not user:
+            try:
+                import pwd
+                user = pwd.getpwuid(os.getuid()).pw_name
+            except Exception:
+                user = "julian"
+    try:
+        proc = subprocess.run(["faillock", "--user", user], capture_output=True, text=True, timeout=3)
+        if proc.returncode != 0:
+            return 0
+        valid_times = []
+        for line in proc.stdout.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 4 and parts[-1] == "V":
+                dt_str = parts[0] + " " + parts[1]
+                try:
+                    dt = datetime.datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                    valid_times.append(dt)
+                except Exception:
+                    pass
+        if len(valid_times) >= deny:
+            last_fail = valid_times[-1]
+            elapsed = (datetime.datetime.now() - last_fail).total_seconds()
+            if elapsed < unlock_time:
+                return max(1, int(unlock_time - elapsed))
+        return 0
+    except Exception:
+        return 0
+
+
+def verify_sudo_password(pwd: str) -> AuthResult:
+    """Directly verifies password via sudo -S -k -p '' -v. Returns AuthResult(success, message)."""
     if not pwd:
-        return False
+        return AuthResult(False, "Bitte gib ein Passwort ein.")
+
+    # 1. Check if user is currently locked by PAM faillock
+    rem = get_faillock_remaining()
+    if rem > 0:
+        return AuthResult(
+            False,
+            f"⏳ Sicherheits-Sperre aktiv: Bitte noch {rem}s warten (Schutz nach vorherigen Fehlversuchen)."
+        )
+
     try:
         proc = subprocess.run(
-            ["sudo", "-S", "-k", "-v"],
+            ["sudo", "-S", "-k", "-p", "", "-v"],
             input=pwd + "\n",
             text=True,
             capture_output=True,
             timeout=10,
         )
-        return proc.returncode == 0
-    except Exception:
-        return False
+        if proc.returncode == 0:
+            return AuthResult(True, "Legitimierung erfolgreich.")
+
+        # Check if attempt triggered faillock
+        rem = get_faillock_remaining()
+        if rem > 0:
+            return AuthResult(
+                False,
+                f"⏳ Sicherheits-Sperre aktiv: Bitte noch {rem}s warten (Schutz nach Fehlversuchen)."
+            )
+
+        err = proc.stderr.lower() if proc.stderr else ""
+        if "locked" in err or "gesperrt" in err:
+            return AuthResult(False, "⏳ Konto vorübergehend gesperrt wegen zu vieler Fehlversuche.")
+
+        return AuthResult(False, "❌ Ungültiges Passwort. Bitte erneut versuchen.")
+    except Exception as e:
+        return AuthResult(False, f"❌ Validierungsfehler: {e}")
 
 
 def run_fallback_askpass(prompt: str) -> int:
@@ -309,8 +385,38 @@ if PYQT_AVAILABLE:
 
             self.txt_pass.setFocus()
 
+            # Timer to monitor PAM faillock lockout cooldown
+            self.lock_timer = QTimer(self)
+            self.lock_timer.setInterval(1000)
+            self.lock_timer.timeout.connect(self._check_lockout_status)
+            if self.verify_direct:
+                self._check_lockout_status()
+
+        def _check_lockout_status(self):
+            rem = get_faillock_remaining()
+            if rem > 0:
+                self.lbl_error.setText(
+                    f"⏳ Sicherheits-Sperre aktiv: Bitte noch {rem}s warten (Schutz nach Fehlversuchen)."
+                )
+                self.lbl_error.setVisible(True)
+                self.btn_confirm.setEnabled(False)
+                if not self.lock_timer.isActive():
+                    self.lock_timer.start()
+            else:
+                if self.lock_timer.isActive():
+                    self.lock_timer.stop()
+                    self.lbl_error.setVisible(False)
+                    self.btn_confirm.setEnabled(True)
+                    self.txt_pass.setFocus()
+
+        def reject(self):
+            if hasattr(self, "lock_timer") and self.lock_timer.isActive():
+                self.lock_timer.stop()
+            super().reject()
+
         def _on_text_changed(self):
-            self.lbl_error.setVisible(False)
+            if not getattr(self, "lock_timer", None) or not self.lock_timer.isActive():
+                self.lbl_error.setVisible(False)
             self.txt_pass.setStyleSheet("")
 
         def _toggle_visibility(self):
@@ -332,18 +438,24 @@ if PYQT_AVAILABLE:
                 self.btn_confirm.setText("Prüfe...")
                 QApplication.processEvents()
 
-                ok = verify_sudo_password(pwd)
+                res = verify_sudo_password(pwd)
                 self.btn_confirm.setEnabled(True)
                 self.btn_confirm.setText("Bestätigen")
 
-                if not ok:
-                    self.lbl_error.setText("❌ Ungültiges Passwort. Bitte erneut versuchen.")
+                if not res.success:
+                    self.lbl_error.setText(res.message)
                     self.lbl_error.setVisible(True)
                     self.txt_pass.setStyleSheet("border: 1px solid #FF455B; background-color: #1a2737;")
                     self.txt_pass.selectAll()
                     self.txt_pass.setFocus()
+                    if get_faillock_remaining() > 0:
+                        self.btn_confirm.setEnabled(False)
+                        if not self.lock_timer.isActive():
+                            self.lock_timer.start()
                     return
 
+            if hasattr(self, "lock_timer") and self.lock_timer.isActive():
+                self.lock_timer.stop()
             save_cached_password(pwd)
             self.result_password = pwd
             self.accept()
