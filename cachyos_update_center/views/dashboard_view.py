@@ -299,8 +299,8 @@ class DashboardView(QWidget):
 
         return card
 
-    def update_package_stats(self, count: int, cachy_count: int, aur_count: int, excluded_count: int = 0):
-        """Updates dashboard with current package numbers and auto-exclusion notice."""
+    def update_package_stats(self, count: int, cachy_count: int, aur_count: int, excluded_count: int = 0, sec_fix_count: int = 0):
+        """Updates dashboard with current package numbers, security fixes, and auto-exclusion notice."""
         val_lbl = self.card_pkgs.findChild(QLabel, "cardValue")
         sub_lbl = self.card_pkgs.findChild(QLabel, "cardSubtitle")
         badge = self.card_pkgs.findChild(QLabel, "cardBadge")
@@ -329,18 +329,32 @@ class DashboardView(QWidget):
             if val_lbl:
                 val_lbl.setText(f"{count} Updates")
             if sub_lbl:
-                extra_note = f" | 🛡️ {excluded_count} ausgeschlossen" if excluded_count > 0 else ""
-                sub_lbl.setText(f"CachyOS: {cachy_count} | AUR: {aur_count}{extra_note}")
+                extra_notes = []
+                if sec_fix_count > 0:
+                    extra_notes.append(f"🛡️ {sec_fix_count} Security-Fixes")
+                if excluded_count > 0:
+                    extra_notes.append(f"⛔ {excluded_count} ausgeschlossen")
+                notes_str = f" | {' • '.join(extra_notes)}" if extra_notes else ""
+                sub_lbl.setText(f"CachyOS: {cachy_count} | AUR: {aur_count}{notes_str}")
             if badge:
-                badge_text = f"{count} Verfügbar" if excluded_count == 0 else f"{count} ({excluded_count} Ausgeschlossen)"
-                badge_color = CachyColors.ACCENT_CYAN if excluded_count == 0 else CachyColors.ACCENT_AMBER
+                if excluded_count > 0:
+                    badge_text = f"⛔ {excluded_count} Intervention nötig"
+                    badge_color = CachyColors.ACCENT_RED
+                elif sec_fix_count > 0:
+                    badge_text = f"🛡️ {sec_fix_count} Sicherheits-Fixes"
+                    badge_color = CachyColors.ACCENT_EMERALD
+                else:
+                    badge_text = f"{count} Verfügbar"
+                    badge_color = CachyColors.ACCENT_CYAN
                 badge.setText(badge_text)
                 badge.setStyleSheet(f"color: {badge_color}; border: 1px solid {badge_color}; border-radius: 4px; padding: 2px 6px; font-size: 10px;")
 
             self.status_title.setText(f"{count} Aktualisierungen verfügbar")
             desc_text = f"{cachy_count} optimierte CachyOS-Pakete und {aur_count} AUR-Pakete bereit zur Installation."
+            if sec_fix_count > 0:
+                desc_text += f"\n🛡️ Sicherheits-Audit: {sec_fix_count} Paket(e) beheben bekannte CVE-Sicherheitslücken."
             if excluded_count > 0:
-                desc_text += f"\n🛡️ Schutz aktiv: {excluded_count} Paket(e) wegen gemeldeter Online-Probleme automatisch abgewählt."
+                desc_text += f"\n⛔ Schutzschild aktiv: {excluded_count} Paket(e) wegen manueller Eingriffserfordernis vorab abgewählt."
             self.status_desc.setText(desc_text)
             self.status_icon.setText("⚡")
             self.status_icon.setStyleSheet(f"""

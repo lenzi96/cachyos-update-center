@@ -57,19 +57,41 @@ class PackageCheckWorker(QThread):
 
         all_pkgs = official_pkgs + aur_pkgs
 
-        # Online Issue Checking
+        # Online Issue & Security Checking
         if all_pkgs:
-            self.status_text.emit("Prüfe Pakete online auf gemeldete Probleme & manuelle Eingriffe...")
-            pkg_names = [p.name for p in all_pkgs]
-            issues = OnlineIssueChecker.check_packages(pkg_names)
+            self.status_text.emit("Prüfe Pakete online auf gemeldete Probleme, Sicherheits-Fixes & manuelle Eingriffe...")
+            issues = OnlineIssueChecker.check_packages_detailed(all_pkgs)
             for p in all_pkgs:
-                if p.name.lower() in issues:
-                    rep = issues[p.name.lower()]
-                    p.has_online_issue = True
+                p_lower = p.name.lower()
+                if p_lower in issues:
+                    reps = issues[p_lower]
+                    p.issues_list = reps
+                    has_crit = any(r.severity == "CRITICAL" for r in reps)
+                    has_sec_fix = any(r.is_security_fix for r in reps)
+                    has_vuln = any(r.severity == "VULNERABILITY" for r in reps)
+                    has_warn = any(r.severity == "WARNING" for r in reps)
+
+                    rep = reps[0]
                     p.issue_reason = rep.reason
                     p.issue_url = rep.url
-                    p.is_auto_excluded = True
-                    p.is_selected = False  # Auto-exclude by default!
+                    p.remediation_cmd = rep.remediation_cmd or ""
+
+                    if has_crit:
+                        p.has_online_issue = True
+                        p.issue_severity = "CRITICAL"
+                        p.is_auto_excluded = True
+                        p.is_selected = False  # Auto-exclude breaking changes
+                    elif has_vuln:
+                        p.has_online_issue = True
+                        p.issue_severity = "VULNERABILITY"
+                    elif has_warn:
+                        p.has_online_issue = True
+                        p.issue_severity = "WARNING"
+
+                    if has_sec_fix:
+                        p.has_security_fix = True
+                        if not p.issue_severity:
+                            p.issue_severity = "SECURITY_FIX"
 
         self.packages_loaded.emit(all_pkgs)
 
@@ -368,9 +390,10 @@ class MainWindow(QMainWindow):
         self.packages = packages
         cachy_count = sum(1 for p in packages if p.is_cachyos)
         aur_count = sum(1 for p in packages if p.is_aur)
-        excluded_count = sum(1 for p in packages if p.has_online_issue)
+        excluded_count = sum(1 for p in packages if p.has_online_issue and getattr(p, "issue_severity", "") == "CRITICAL")
+        sec_fix_count = sum(1 for p in packages if getattr(p, "has_security_fix", False))
 
-        self.view_dashboard.update_package_stats(len(packages), cachy_count, aur_count, excluded_count)
+        self.view_dashboard.update_package_stats(len(packages), cachy_count, aur_count, excluded_count, sec_fix_count)
         self.view_packages.set_packages(packages)
 
 

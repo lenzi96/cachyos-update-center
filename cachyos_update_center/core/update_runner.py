@@ -143,10 +143,11 @@ class UpdatePipelineWorker(QThread):
                 candidate_names = [p.name for p in pending_official]
 
             issues = OnlineIssueChecker.check_packages(candidate_names)
-            if issues:
-                self.terminal_line.emit(f"⚠️ {len(issues)} Paket(e) mit bekannten Online-Problemen/Interventionen erkannt:")
+            critical_issues = {p: rep for p, rep in issues.items() if rep.auto_exclude}
+            if critical_issues:
+                self.terminal_line.emit(f"⚠️ {len(critical_issues)} Paket(e) mit bekannten Online-Problemen/Interventionen erkannt:")
                 excluded_names = []
-                for pkg_name, rep in issues.items():
+                for pkg_name, rep in critical_issues.items():
                     self.terminal_line.emit(f"   ➔ '{pkg_name}': {rep.title} ({rep.source})")
                     self.terminal_line.emit(f"     Grund: {rep.reason}")
                     self.terminal_line.emit(f"     🛡️ Automatisch ausgeschlossen (--ignore {pkg_name})")

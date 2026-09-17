@@ -5,8 +5,8 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -25,6 +25,10 @@ class PackageUpdate:
     issue_reason: str = ""
     issue_url: str = ""
     is_auto_excluded: bool = False
+    has_security_fix: bool = False
+    issue_severity: str = ""  # 'CRITICAL', 'SECURITY_FIX', 'VULNERABILITY', 'WARNING', 'INFO'
+    remediation_cmd: str = ""
+    issues_list: List[Any] = field(default_factory=list)
 
 
 
