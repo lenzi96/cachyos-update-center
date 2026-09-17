@@ -91,6 +91,23 @@ def save_cached_password(pwd: str):
         pass
 
 
+def verify_sudo_password(pwd: str) -> bool:
+    """Directly verifies password via sudo -S -k -v. Returns True if valid."""
+    if not pwd:
+        return False
+    try:
+        proc = subprocess.run(
+            ["sudo", "-S", "-k", "-v"],
+            input=pwd + "\n",
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
 def run_fallback_askpass(prompt: str) -> int:
     """Fallback to kdialog, zenity, or terminal getpass if PyQt6 is not usable."""
     pwd = None
@@ -138,12 +155,16 @@ def run_fallback_askpass(prompt: str) -> int:
 
 if PYQT_AVAILABLE:
     class AskpassDialog(QDialog):
-        def __init__(self, prompt_text: str = "Administrator-Passwort:"):
-            super().__init__()
+        def __init__(self, prompt_text: str = "Administrator-Passwort:", parent=None, verify_direct: bool = False):
+            super().__init__(parent)
+            self.verify_direct = verify_direct
             self.result_password = ""
             self.setWindowTitle("CachyOS Update Center - Legitimierung")
             self.setMinimumWidth(440)
-            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.setModal(True)
+            if parent is None:
+                self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+
             self.setStyleSheet("""
                 QDialog {
                     background-color: #0d131c;
@@ -219,7 +240,7 @@ if PYQT_AVAILABLE:
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(24, 20, 24, 20)
-            layout.setSpacing(16)
+            layout.setSpacing(14)
 
             # Header
             header_layout = QHBoxLayout()
@@ -250,6 +271,7 @@ if PYQT_AVAILABLE:
             self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
             self.txt_pass.setPlaceholderText("Passwort eingeben...")
             self.txt_pass.returnPressed.connect(self._on_confirm)
+            self.txt_pass.textChanged.connect(self._on_text_changed)
             input_layout.addWidget(self.txt_pass)
 
             self.btn_toggle = QPushButton("👁")
@@ -259,6 +281,12 @@ if PYQT_AVAILABLE:
             self.btn_toggle.clicked.connect(self._toggle_visibility)
             input_layout.addWidget(self.btn_toggle)
             layout.addLayout(input_layout)
+
+            # Error label
+            self.lbl_error = QLabel("")
+            self.lbl_error.setStyleSheet("color: #FF455B; font-size: 12px; font-weight: bold;")
+            self.lbl_error.setVisible(False)
+            layout.addWidget(self.lbl_error)
 
             # Action Buttons
             btn_layout = QHBoxLayout()
@@ -281,6 +309,10 @@ if PYQT_AVAILABLE:
 
             self.txt_pass.setFocus()
 
+        def _on_text_changed(self):
+            self.lbl_error.setVisible(False)
+            self.txt_pass.setStyleSheet("")
+
         def _toggle_visibility(self):
             if self.txt_pass.echoMode() == QLineEdit.EchoMode.Password:
                 self.txt_pass.setEchoMode(QLineEdit.EchoMode.Normal)
@@ -294,6 +326,25 @@ if PYQT_AVAILABLE:
             if not pwd:
                 self.txt_pass.setStyleSheet("border: 1px solid #FF455B; background-color: #1a2737;")
                 return
+
+            if self.verify_direct:
+                self.btn_confirm.setEnabled(False)
+                self.btn_confirm.setText("Prüfe...")
+                QApplication.processEvents()
+
+                ok = verify_sudo_password(pwd)
+                self.btn_confirm.setEnabled(True)
+                self.btn_confirm.setText("Bestätigen")
+
+                if not ok:
+                    self.lbl_error.setText("❌ Ungültiges Passwort. Bitte erneut versuchen.")
+                    self.lbl_error.setVisible(True)
+                    self.txt_pass.setStyleSheet("border: 1px solid #FF455B; background-color: #1a2737;")
+                    self.txt_pass.selectAll()
+                    self.txt_pass.setFocus()
+                    return
+
+            save_cached_password(pwd)
             self.result_password = pwd
             self.accept()
 

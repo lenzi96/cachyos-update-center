@@ -52,9 +52,15 @@ def get_authenticated_env() -> Dict[str, str]:
 
 
 def is_sudo_authenticated() -> bool:
-    """Checks if sudo credentials are authenticated without prompting."""
+    """Checks if sudo credentials or RAM session token are valid."""
     if is_root():
         return True
+    # 1. Check if an active session token is present in memory tmpfs
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid() if hasattr(os, 'getuid') else 1000}")
+    token_path = os.path.join(runtime_dir, "cachyos_update_center_auth.token")
+    if os.path.isfile(token_path) and os.path.getsize(token_path) > 0:
+        return True
+    # 2. Check sudo timestamp
     try:
         res = subprocess.run(
             ["sudo", "-n", "true"],
@@ -113,6 +119,8 @@ def authenticate_sudo(status_callback: Optional[Callable[[str], None]] = None) -
             return True
         else:
             clear_auth_cache()
+            if status_callback and res.stderr:
+                status_callback(f"Sudo: {res.stderr.strip()}")
             return False
     except Exception as e:
         clear_auth_cache()

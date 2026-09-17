@@ -11,6 +11,7 @@ from PyQt6.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -420,6 +421,15 @@ class MainWindow(QMainWindow):
         Triggers the 4-step update sequence.
         Always respects the user's mirror rating preference!
         """
+        # Ensure root authentication upfront with modal dialog parented to MainWindow
+        from .core.privilege import is_root, is_sudo_authenticated
+        if not is_root() and not is_sudo_authenticated():
+            from .askpass import AskpassDialog
+            dlg = AskpassDialog(parent=self, verify_direct=True)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                # User cancelled authentication
+                return
+
         cfg = self.view_settings.config
         rate_always = cfg.get("rate_mirrors_always", True)
         entry_c = cfg.get("entry_country", "DE")
