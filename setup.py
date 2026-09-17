@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cachyos-update-center",
-    version="1.0.0",
+    version="1.0.1",
     author="Julian / CachyOS Community",
     description="Modernes Update Center für CachyOS mit vorheriger Spiegelserver-Bewertung",
     packages=find_packages(),

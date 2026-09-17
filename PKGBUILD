@@ -1,10 +1,10 @@
 # Maintainer: Julian / CachyOS Community
 pkgname=cachyos-update-center
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="Modernes Update Center für CachyOS mit vorheriger Spiegelserver-Bewertung"
 arch=('any')
-url="https://github.com/cachyos/cachyos-update-center"
+url="https://github.com/lenzi96/cachyos-update-center"
 license=('GPL-3.0-or-later')
 depends=(
     'python'
