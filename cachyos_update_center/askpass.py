@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""
+CachyOS Update Center - Graphical Askpass Helper
+Provides a secure, native CachyOS-styled password prompt for sudo / yay.
+Outputs the entered password to stdout (required by SUDO_ASKPASS).
+"""
+import os
+import shutil
+import subprocess
+import sys
+
+try:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+    from PyQt6.QtWidgets import (
+        QApplication,
+        QDialog,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QPushButton,
+        QVBoxLayout,
+    )
+    PYQT_AVAILABLE = True
+except ImportError:
+    PYQT_AVAILABLE = False
+
+
+def run_fallback_askpass(prompt: str) -> int:
+    """Fallback to kdialog, zenity, or terminal getpass if PyQt6 is not usable."""
+    # 1. Try kdialog (KDE native)
+    if shutil.which("kdialog"):
+        try:
+            res = subprocess.run(
+                ["kdialog", "--password", prompt, "--title", "CachyOS Update Center"],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0:
+                sys.stdout.write(res.stdout)
+                sys.stdout.flush()
+                return 0
+            return 1
+        except Exception:
+            pass
+
+    # 2. Try zenity (GNOME / GTK native)
+    if shutil.which("zenity"):
+        try:
+            res = subprocess.run(
+                ["zenity", "--password", f"--title=CachyOS Update Center: {prompt}"],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0:
+                sys.stdout.write(res.stdout)
+                sys.stdout.flush()
+                return 0
+            return 1
+        except Exception:
+            pass
+
+    # 3. Terminal fallback
+    try:
+        import getpass
+        pwd = getpass.getpass(f"{prompt} ")
+        sys.stdout.write(pwd + "\n")
+        sys.stdout.flush()
+        return 0
+    except Exception:
+        return 1
+
+
+if PYQT_AVAILABLE:
+    class AskpassDialog(QDialog):
+        def __init__(self, prompt_text: str = "Administrator-Passwort:"):
+            super().__init__()
+            self.result_password = ""
+            self.setWindowTitle("CachyOS Update Center - Legitimierung")
+            self.setMinimumWidth(440)
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.setStyleSheet("""
+                QDialog {
+                    background-color: #0d131c;
+                    border: 1px solid #1f2f42;
+                    border-radius: 12px;
+                }
+                QLabel#TitleLabel {
+                    color: #ffffff;
+                    font-size: 15px;
+                    font-weight: bold;
+                }
+                QLabel#SubLabel {
+                    color: #94a3b8;
+                    font-size: 12px;
+                }
+                QLineEdit {
+                    background-color: #172230;
+                    border: 1px solid #2a3b4c;
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    color: #ffffff;
+                    font-size: 14px;
+                    selection-background-color: #00D494;
+                    selection-color: #000000;
+                }
+                QLineEdit:focus {
+                    border: 1px solid #00D494;
+                    background-color: #1a2737;
+                }
+                QPushButton#ToggleBtn {
+                    background-color: #172230;
+                    border: 1px solid #2a3b4c;
+                    border-radius: 8px;
+                    color: #94a3b8;
+                    font-size: 13px;
+                    padding: 8px 12px;
+                }
+                QPushButton#ToggleBtn:hover {
+                    color: #ffffff;
+                    border-color: #00D494;
+                }
+                QPushButton#BtnCancel {
+                    background-color: #172230;
+                    border: 1px solid #2a3b4c;
+                    border-radius: 8px;
+                    color: #cbd5e1;
+                    font-size: 13px;
+                    font-weight: 500;
+                    padding: 8px 18px;
+                    min-height: 20px;
+                }
+                QPushButton#BtnCancel:hover {
+                    background-color: #223246;
+                    color: #ffffff;
+                }
+                QPushButton#BtnConfirm {
+                    background-color: #00D494;
+                    border: none;
+                    border-radius: 8px;
+                    color: #000000;
+                    font-size: 13px;
+                    font-weight: bold;
+                    padding: 8px 22px;
+                    min-height: 20px;
+                }
+                QPushButton#BtnConfirm:hover {
+                    background-color: #00eba4;
+                }
+                QPushButton#BtnConfirm:pressed {
+                    background-color: #00b87f;
+                }
+            """)
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(16)
+
+            # Header
+            header_layout = QHBoxLayout()
+            icon_label = QLabel("🛡️")
+            icon_font = QFont()
+            icon_font.setPointSize(24)
+            icon_label.setFont(icon_font)
+            header_layout.addWidget(icon_label)
+
+            text_layout = QVBoxLayout()
+            title_lbl = QLabel("Administrator-Rechte erforderlich")
+            title_lbl.setObjectName("TitleLabel")
+            text_layout.addWidget(title_lbl)
+
+            # Clean user info
+            user = os.environ.get("USER", "Benutzer")
+            sub_lbl = QLabel(f"Bitte gib das Kennwort für '{user}' ein, um die Paketaktualisierung durchzuführen.")
+            sub_lbl.setObjectName("SubLabel")
+            sub_lbl.setWordWrap(True)
+            text_layout.addWidget(sub_lbl)
+            header_layout.addLayout(text_layout)
+            layout.addLayout(header_layout)
+
+            # Password row
+            input_layout = QHBoxLayout()
+            input_layout.setSpacing(6)
+            self.txt_pass = QLineEdit()
+            self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
+            self.txt_pass.setPlaceholderText("Passwort eingeben...")
+            self.txt_pass.returnPressed.connect(self._on_confirm)
+            input_layout.addWidget(self.txt_pass)
+
+            self.btn_toggle = QPushButton("👁")
+            self.btn_toggle.setObjectName("ToggleBtn")
+            self.btn_toggle.setToolTip("Passwort anzeigen / verbergen")
+            self.btn_toggle.setFixedWidth(42)
+            self.btn_toggle.clicked.connect(self._toggle_visibility)
+            input_layout.addWidget(self.btn_toggle)
+            layout.addLayout(input_layout)
+
+            # Action Buttons
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+
+            self.btn_cancel = QPushButton("Abbrechen")
+            self.btn_cancel.setObjectName("BtnCancel")
+            self.btn_cancel.clicked.connect(self.reject)
+            btn_layout.addWidget(self.btn_cancel)
+
+            self.btn_confirm = QPushButton("Bestätigen")
+            self.btn_confirm.setObjectName("BtnConfirm")
+            self.btn_confirm.clicked.connect(self._on_confirm)
+            btn_layout.addWidget(self.btn_confirm)
+
+            layout.addLayout(btn_layout)
+
+            # Shortcuts
+            QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self.reject)
+
+            self.txt_pass.setFocus()
+
+        def _toggle_visibility(self):
+            if self.txt_pass.echoMode() == QLineEdit.EchoMode.Password:
+                self.txt_pass.setEchoMode(QLineEdit.EchoMode.Normal)
+                self.btn_toggle.setText("🔒")
+            else:
+                self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
+                self.btn_toggle.setText("👁")
+
+        def _on_confirm(self):
+            pwd = self.txt_pass.text()
+            if not pwd:
+                self.txt_pass.setStyleSheet("border: 1px solid #FF455B; background-color: #1a2737;")
+                return
+            self.result_password = pwd
+            self.accept()
+
+
+def run_pyqt_askpass(prompt: str) -> int:
+    """Displays the CachyOS Emerald Dark password dialog."""
+    if not PYQT_AVAILABLE:
+        return run_fallback_askpass(prompt)
+
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+
+    try:
+        dlg = AskpassDialog(prompt)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_password:
+            sys.stdout.write(dlg.result_password + "\n")
+            sys.stdout.flush()
+            return 0
+        return 1
+    except Exception:
+        return run_fallback_askpass(prompt)
+
+
+def main():
+    prompt = sys.argv[1] if len(sys.argv) > 1 else "Administrator-Passwort:"
+    if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"):
+        sys.exit(run_pyqt_askpass(prompt))
+    else:
+        sys.exit(run_fallback_askpass(prompt))
+
+
+if __name__ == "__main__":
+    main()

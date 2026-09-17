@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from .privilege import elevate_command, run_privileged
+from .privilege import elevate_command, get_authenticated_env, run_privileged
 
 
 @dataclass
@@ -63,6 +63,8 @@ class SnapperHelper:
         try:
             proc = subprocess.run(
                 cmd,
+                env=get_authenticated_env(),
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -84,6 +86,8 @@ class SnapperHelper:
             cmd = elevate_command(["snapper", "-c", "root", "list"])
             proc = subprocess.run(
                 cmd,
+                env=get_authenticated_env(),
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=10,

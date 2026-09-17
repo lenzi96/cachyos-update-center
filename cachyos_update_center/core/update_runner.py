@@ -13,7 +13,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from .mirror_rater import MirrorRater
 from .online_issue_checker import OnlineIssueChecker
 from .package_checker import PackageChecker
-from .privilege import elevate_command
+from .privilege import authenticate_sudo, elevate_command, get_authenticated_env, is_root
 from .snapper_helper import SnapperHelper
 from .system_care import SystemCare
 
@@ -168,15 +168,27 @@ class UpdatePipelineWorker(QThread):
             else:
                 self.terminal_line.emit("✅ Online-Prüfung ergab keine bekannten kritischen Probleme für die anstehenden Pakete.\n")
 
+        # Check and authenticate root privileges upfront
+        if not is_root():
+            self.terminal_line.emit("🔐 Validiere Administrator-Rechte (Root/Sudo)...")
+            auth_ok = authenticate_sudo(status_callback=lambda l: self.terminal_line.emit(l))
+            if not auth_ok:
+                self.terminal_line.emit("\n❌ Authentifizierung abgebrochen oder fehlgeschlagen. Aktualisierung wird gestoppt.\n")
+                self.step_completed.emit(2, False)
+                self.pipeline_finished.emit(False, "Aktualisierung abgebrochen: Fehlende Administrator-Rechte.")
+                return
+            self.terminal_line.emit("✅ Administrator-Rechte erfolgreich bestätigt.\n")
+
         # Decide update command
         if self.include_aur and shutil.which("yay"):
-            self.terminal_line.emit("Verwende yay für offizielle Repositorien und AUR...\n")
+            self.terminal_line.emit("Verwende yay für offizielle Repositorien und AUR (mit SUDO_ASKPASS-Integration)...\n")
+            base_yay = ["yay", "--sudoflags", "-A", "--sudoloop"]
             if self.selected_packages:
-                update_cmd = ["yay", "-S", "--noconfirm", "--needed"] + self.selected_packages
+                update_cmd = base_yay + ["-S", "--noconfirm", "--needed"] + self.selected_packages
             else:
-                update_cmd = ["yay", "-Syu", "--noconfirm", "--needed"] + ignore_flags
+                update_cmd = base_yay + ["-Syu", "--noconfirm", "--needed"] + ignore_flags
         else:
-            self.terminal_line.emit("Verwende pacman mit Polkit-Autorisierung...\n")
+            self.terminal_line.emit("Verwende pacman mit Administrator-Autorisierung...\n")
             if self.selected_packages:
                 update_cmd = elevate_command(["pacman", "-S", "--noconfirm", "--needed"] + self.selected_packages)
             else:
@@ -237,8 +249,11 @@ class UpdatePipelineWorker(QThread):
     def _run_process_stream(self, cmd: List[str]) -> bool:
         """Executes command and streams its stdout/stderr to terminal_line signal."""
         try:
+            env = get_authenticated_env()
             self._current_process = subprocess.Popen(
                 cmd,
+                env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional, Tuple
 
-from .privilege import elevate_command, run_privileged
+from .privilege import elevate_command, get_authenticated_env, run_privileged
 
 
 @dataclass
@@ -213,11 +213,13 @@ class MirrorRater:
         cmd = elevate_command(["bash", "-c", script])
 
         if line_callback:
-            line_callback(f"▶ Starte 'cachyos-rate-mirrors' mit Polkit-Autorisierung (Land: {entry_country})...\n")
+            line_callback(f"▶ Starte 'cachyos-rate-mirrors' mit Administrator-Rechten (Land: {entry_country})...\n")
 
         try:
             proc = subprocess.Popen(
                 cmd,
+                env=get_authenticated_env(),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -266,6 +268,8 @@ class MirrorRater:
         try:
             proc = subprocess.Popen(
                 cmd,
+                env=get_authenticated_env(),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
