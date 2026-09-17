@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-CachyOS Update Center - Graphical Askpass Helper
+CachyOS Update Center - Graphical Askpass Helper with Session Caching
 Provides a secure, native CachyOS-styled password prompt for sudo / yay.
-Outputs the entered password to stdout (required by SUDO_ASKPASS).
+Caches authentication in RAM tmpfs during the active update session so the user is only prompted ONCE.
+Outputs the password to stdout (required by SUDO_ASKPASS).
 """
 import os
 import shutil
 import subprocess
 import sys
+import time
+from typing import Optional
 
 try:
     from PyQt6.QtCore import Qt
@@ -26,8 +29,71 @@ except ImportError:
     PYQT_AVAILABLE = False
 
 
+def get_auth_token_file() -> str:
+    """Returns the RAM-backed path for the session auth token."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid() if hasattr(os, 'getuid') else 1000}")
+    if not os.path.isdir(runtime_dir):
+        runtime_dir = "/tmp"
+    return os.path.join(runtime_dir, "cachyos_update_center_auth.token")
+
+
+def _wipe_file(path: str):
+    """Securely zeroes and unlinks a file."""
+    if os.path.exists(path):
+        try:
+            size = os.path.getsize(path)
+            with open(path, "wb") as f:
+                f.write(b"\x00" * max(size, 64))
+            os.unlink(path)
+        except Exception:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+
+def check_cached_password() -> Optional[str]:
+    """Checks if a valid, unexpired session password exists in memory tmpfs."""
+    token_path = get_auth_token_file()
+
+    if not os.path.isfile(token_path):
+        return None
+
+    # Max validity: 15 minutes (900 seconds)
+    try:
+        mtime = os.path.getmtime(token_path)
+        if time.time() - mtime > 900:
+            _wipe_file(token_path)
+            return None
+    except Exception:
+        return None
+
+    # Read cached password
+    try:
+        with open(token_path, "r", encoding="utf-8") as f:
+            pwd = f.read().rstrip("\r\n")
+        return pwd if pwd else None
+    except Exception:
+        return None
+
+
+def save_cached_password(pwd: str):
+    """Saves the password to RAM-backed session storage with 0600 permissions."""
+    if not pwd:
+        return
+    token_path = get_auth_token_file()
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(token_path, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(pwd)
+    except Exception:
+        pass
+
+
 def run_fallback_askpass(prompt: str) -> int:
     """Fallback to kdialog, zenity, or terminal getpass if PyQt6 is not usable."""
+    pwd = None
     # 1. Try kdialog (KDE native)
     if shutil.which("kdialog"):
         try:
@@ -37,15 +103,12 @@ def run_fallback_askpass(prompt: str) -> int:
                 text=True,
             )
             if res.returncode == 0:
-                sys.stdout.write(res.stdout)
-                sys.stdout.flush()
-                return 0
-            return 1
+                pwd = res.stdout.rstrip("\r\n")
         except Exception:
             pass
 
     # 2. Try zenity (GNOME / GTK native)
-    if shutil.which("zenity"):
+    if pwd is None and shutil.which("zenity"):
         try:
             res = subprocess.run(
                 ["zenity", "--password", f"--title=CachyOS Update Center: {prompt}"],
@@ -53,22 +116,24 @@ def run_fallback_askpass(prompt: str) -> int:
                 text=True,
             )
             if res.returncode == 0:
-                sys.stdout.write(res.stdout)
-                sys.stdout.flush()
-                return 0
-            return 1
+                pwd = res.stdout.rstrip("\r\n")
         except Exception:
             pass
 
     # 3. Terminal fallback
-    try:
-        import getpass
-        pwd = getpass.getpass(f"{prompt} ")
+    if pwd is None:
+        try:
+            import getpass
+            pwd = getpass.getpass(f"{prompt} ")
+        except Exception:
+            return 1
+
+    if pwd:
+        save_cached_password(pwd)
         sys.stdout.write(pwd + "\n")
         sys.stdout.flush()
         return 0
-    except Exception:
-        return 1
+    return 1
 
 
 if PYQT_AVAILABLE:
@@ -171,7 +236,7 @@ if PYQT_AVAILABLE:
 
             # Clean user info
             user = os.environ.get("USER", "Benutzer")
-            sub_lbl = QLabel(f"Bitte gib das Kennwort für '{user}' ein, um die Paketaktualisierung durchzuführen.")
+            sub_lbl = QLabel(f"Bitte gib das Kennwort für '{user}' ein, um die Aktualisierung durchzuführen.")
             sub_lbl.setObjectName("SubLabel")
             sub_lbl.setWordWrap(True)
             text_layout.addWidget(sub_lbl)
@@ -245,6 +310,7 @@ def run_pyqt_askpass(prompt: str) -> int:
     try:
         dlg = AskpassDialog(prompt)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_password:
+            save_cached_password(dlg.result_password)
             sys.stdout.write(dlg.result_password + "\n")
             sys.stdout.flush()
             return 0
@@ -255,6 +321,15 @@ def run_pyqt_askpass(prompt: str) -> int:
 
 def main():
     prompt = sys.argv[1] if len(sys.argv) > 1 else "Administrator-Passwort:"
+
+    # 1. First check if a cached session token exists (avoids multiple prompts!)
+    cached = check_cached_password()
+    if cached is not None:
+        sys.stdout.write(cached + "\n")
+        sys.stdout.flush()
+        sys.exit(0)
+
+    # 2. Prompt user via GUI if no cached token
     if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"):
         sys.exit(run_pyqt_askpass(prompt))
     else:

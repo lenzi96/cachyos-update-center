@@ -67,6 +67,27 @@ def is_sudo_authenticated() -> bool:
         return False
 
 
+def clear_auth_cache():
+    """Securely clears cached authentication credentials from RAM tmpfs."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid() if hasattr(os, 'getuid') else 1000}")
+    if not os.path.isdir(runtime_dir):
+        runtime_dir = "/tmp"
+    token_path = os.path.join(runtime_dir, "cachyos_update_center_auth.token")
+    last_used_path = token_path + ".last_used"
+    for p in [token_path, last_used_path]:
+        if os.path.exists(p):
+            try:
+                size = os.path.getsize(p)
+                with open(p, "wb") as f:
+                    f.write(b"\x00" * max(size, 64))
+                os.unlink(p)
+            except Exception:
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+
+
 def authenticate_sudo(status_callback: Optional[Callable[[str], None]] = None) -> bool:
     """
     Ensures that sudo is authenticated. If already warm, returns True immediately.
@@ -88,8 +109,13 @@ def authenticate_sudo(status_callback: Optional[Callable[[str], None]] = None) -
             text=True,
             timeout=120,
         )
-        return res.returncode == 0
+        if res.returncode == 0:
+            return True
+        else:
+            clear_auth_cache()
+            return False
     except Exception as e:
+        clear_auth_cache()
         if status_callback:
             status_callback(f"Authentifizierungsfehler: {e}")
         return False
